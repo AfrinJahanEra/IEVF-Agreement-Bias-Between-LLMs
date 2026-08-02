@@ -10,6 +10,9 @@ import pandas as pd
 
 from .config import path
 
+DRY_RUN = False  # set by run_pipeline.py --dry-run: use a separate db file
+                 # so fake responses can never be mistaken for real ones
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS responses (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +41,10 @@ CREATE TABLE IF NOT EXISTS judgments (
 
 
 def _conn():
-    conn = sqlite3.connect(path("db"))
+    db_path = path("db")
+    if DRY_RUN:
+        db_path = db_path.with_name("dryrun_" + db_path.name)
+    conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")  # safe to stop mid-write
     return conn
 

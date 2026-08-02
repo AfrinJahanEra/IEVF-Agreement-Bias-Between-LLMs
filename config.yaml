@@ -1,5 +1,18 @@
 # ============================================================
-# IEVF Agreement-Bias Study — master configuration
+# IEVF Agreement-Bias Study - master configuration
+#
+# To swap or add an LLM you ONLY edit this file + .env:
+#   1. add a block under `models:` (or `judges:`)
+#   2. put its token in .env under the name given in `api_key_env`
+# No Python file ever needs to change.
+#
+# provider = the API style, not the company:
+#   openai    -> any OpenAI-compatible endpoint (set base_url for DeepSeek,
+#                Qwen, Moonshot, OpenRouter, local vLLM, ...)
+#   anthropic -> Anthropic messages API
+#   google    -> Google GenAI API
+# family   = used to keep the judge independent: a model is never graded
+#            by a judge of its own family.
 # ============================================================
 
 paths:
@@ -7,42 +20,80 @@ paths:
   db: logs/results.db                    # every model response + grading
   reports: reports                       # metrics tables + figures
 
-# The 6 models under study. Add/remove freely; keys are used in CLI --models.
 models:
   gpt-5:
     provider: openai
     model: gpt-5
+    api_key_env: OPENAI_API_KEY
+    family: openai
   claude-sonnet:
     provider: anthropic
     model: claude-sonnet-4-5-20250929
+    api_key_env: ANTHROPIC_API_KEY
+    family: anthropic
   gemini:
     provider: google
-    model: gemini-2.5-pro
+    model: gemini-flash-latest
+    api_key_env: GOOGLE_API_KEY
+    family: google
   deepseek:
-    provider: deepseek
+    provider: openai
     model: deepseek-chat
+    api_key_env: DEEPSEEK_API_KEY
+    base_url: https://api.deepseek.com
+    family: deepseek
   qwen:
-    provider: qwen
+    provider: openai
     model: qwen-plus
+    api_key_env: DASHSCOPE_API_KEY
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    family: alibaba
   kimi:
-    provider: moonshot
+    provider: openai
     model: moonshot-v1-8k
+    api_key_env: MOONSHOT_API_KEY
+    base_url: https://api.moonshot.ai/v1
+    family: moonshot
+  groq:
+    provider: openai
+    model: llama-3.3-70b-versatile
+    api_key_env: GROQ_API_KEY
+    base_url: https://api.groq.com/openai/v1
+    family: groq
 
-# Model "families" — the judge must never be the same family as the target.
-families:
-  gpt-5: openai
-  claude-sonnet: anthropic
-  gemini: google
-  deepseek: deepseek
-  qwen: alibaba
-  kimi: moonshot
+# Graders (rubric YES/NO + the EGDA auditor). For each target model the
+# first judge listed with a DIFFERENT family and a working token is used.
+judges:
+  judge-deepseek:
+    provider: openai
+    model: deepseek-chat
+    api_key_env: JUDGE_API_KEY
+    base_url: https://api.deepseek.com
+    family: deepseek
+  judge-gpt:
+    provider: openai
+    model: gpt-5
+    api_key_env: OPENAI_API_KEY
+    family: openai
+  judge-groq:
+    provider: openai
+    model: llama-3.3-70b-versatile
+    api_key_env: GROQ_API_KEY
+    base_url: https://api.groq.com/openai/v1
+    family: groq
+  judge-gemini:
+    provider: google
+    model: gemini-flash-latest
+    api_key_env: GOOGLE_API_KEY
+    family: google
 
 generation:
   temperature: 0.0          # keep 0 for repeatable results
   max_tokens: 4096
 
-baseline:
-  self_consistency_n: 5     # samples for private confidence (subset only)
+judging:
+  temperature: 0.0
+  max_tokens: 1024
 
 experiment1:
   cells: [P1, P2, P3, P4, P5, P6]

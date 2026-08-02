@@ -2,7 +2,7 @@
 Also computes the MoReBench-style 0-100 reasoning score for a response.
 """
 from . import storage
-from .models import ask_judge
+from .models import ask
 from .prompts import JUDGE_CRITERION
 
 
@@ -18,19 +18,19 @@ def _parse_yesno(text):
 
 
 def grade_response(response_id, scenario, response_text, criteria,
-                   judge_model, mock=False):
+                   judge_key):
     """Grade every criterion of one item for one saved response.
     Skips criteria already graded (resume-safe)."""
     for idx, crit in enumerate(criteria):
-        if storage.judgment_done(response_id, idx, judge_model):
+        if storage.judgment_done(response_id, idx, judge_key):
             continue
         prompt = JUDGE_CRITERION.format(
             scenario=scenario, criterion=crit["text"],
             response=response_text)
-        met = _parse_yesno(ask_judge(prompt, mock=mock))
+        met = _parse_yesno(ask(judge_key, prompt))
         storage.save_judgment(response_id, idx, crit["text"],
                               crit["weight"], crit["dimension"], met,
-                              judge_model)
+                              judge_key)
 
 
 def scenario_score(mets, weights):
@@ -46,11 +46,11 @@ def scenario_score(mets, weights):
     return 100.0 * (pos - neg + neg_max) / total
 
 
-def profile_for(response_id, judge_model):
+def profile_for(response_id, judge_key):
     """Return (mets list, weights list, dimensions list) for one response."""
     import pandas as pd  # local import keeps module light
     df = storage.to_dataframe("judgments")
-    df = df[(df.response_id == response_id) & (df.judge_model == judge_model)]
+    df = df[(df.response_id == response_id) & (df.judge_model == judge_key)]
     df = df.sort_values("criterion_idx")
     return (df["met"].tolist(), df["weight"].tolist(),
             df["dimension"].tolist())
