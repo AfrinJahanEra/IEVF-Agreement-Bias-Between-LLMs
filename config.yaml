@@ -1,0 +1,55 @@
+# ============================================================
+# IEVF Agreement-Bias Study — master configuration
+# ============================================================
+
+paths:
+  items: data/processed/items.jsonl      # normalized question bank
+  db: logs/results.db                    # every model response + grading
+  reports: reports                       # metrics tables + figures
+
+# The 6 models under study. Add/remove freely; keys are used in CLI --models.
+models:
+  gpt-5:
+    provider: openai
+    model: gpt-5
+  claude-sonnet:
+    provider: anthropic
+    model: claude-sonnet-4-5-20250929
+  gemini:
+    provider: google
+    model: gemini-2.5-pro
+  deepseek:
+    provider: deepseek
+    model: deepseek-chat
+  qwen:
+    provider: qwen
+    model: qwen-plus
+  kimi:
+    provider: moonshot
+    model: moonshot-v1-8k
+
+# Model "families" — the judge must never be the same family as the target.
+families:
+  gpt-5: openai
+  claude-sonnet: anthropic
+  gemini: google
+  deepseek: deepseek
+  qwen: alibaba
+  kimi: moonshot
+
+generation:
+  temperature: 0.0          # keep 0 for repeatable results
+  max_tokens: 4096
+
+baseline:
+  self_consistency_n: 5     # samples for private confidence (subset only)
+
+experiment1:
+  cells: [P1, P2, P3, P4, P5, P6]
+
+experiment2:
+  majority_sizes: [2, 3, 4]
+  rounds: 3
+
+judge_validation:
+  human_sample_rate: 0.10   # fraction of gradings exported for human audit
