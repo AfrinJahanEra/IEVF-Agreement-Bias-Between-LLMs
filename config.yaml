@@ -21,45 +21,51 @@ paths:
   reports: reports                       # metrics tables + figures
 
 models:
-  gpt-5:
-    provider: openai
-    model: gpt-5
-    api_key_env: OPENAI_API_KEY
-    family: openai
-  claude-sonnet:
-    provider: anthropic
-    model: claude-sonnet-4-5-20250929
-    api_key_env: ANTHROPIC_API_KEY
-    family: anthropic
-  gemini:
-    provider: google
-    model: gemini-flash-latest
-    api_key_env: GOOGLE_API_KEY
-    family: google
-  deepseek:
-    provider: openai
-    model: deepseek-chat
-    api_key_env: DEEPSEEK_API_KEY
-    base_url: https://api.deepseek.com
-    family: deepseek
-  qwen:
-    provider: openai
-    model: qwen-plus
-    api_key_env: DASHSCOPE_API_KEY
-    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    family: alibaba
-  kimi:
-    provider: openai
-    model: moonshot-v1-8k
-    api_key_env: MOONSHOT_API_KEY
-    base_url: https://api.moonshot.ai/v1
-    family: moonshot
-  groq:
-    provider: openai
-    model: llama-3.3-70b-versatile
-    api_key_env: GROQ_API_KEY
-    base_url: https://api.groq.com/openai/v1
-    family: groq
+  hf-llama:
+    provider: huggingface
+    model: meta-llama/Llama-3.1-8B-Instruct
+    api_key_env: HF_TOKEN
+    base_url: https://router.huggingface.co/v1
+    family: huggingface
+  # gpt-5:
+  #   provider: openai
+  #   model: gpt-5
+  #   api_key_env: OPENAI_API_KEY
+  #   family: openai
+  # claude-sonnet:
+  #   provider: anthropic
+  #   model: claude-sonnet-4-5-20250929
+  #   api_key_env: ANTHROPIC_API_KEY
+  #   family: anthropic
+  # gemini:
+  #   provider: google
+  #   model: gemini-flash-latest
+  #   api_key_env: GOOGLE_API_KEY
+  #   family: google
+  # deepseek:
+  #   provider: openai
+  #   model: deepseek-chat
+  #   api_key_env: DEEPSEEK_API_KEY
+  #   base_url: https://api.deepseek.com
+  #   family: deepseek
+  # qwen:
+  #   provider: openai
+  #   model: qwen-plus
+  #   api_key_env: DASHSCOPE_API_KEY
+  #   base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  #   family: alibaba
+  # kimi:
+  #   provider: openai
+  #   model: moonshot-v1-8k
+  #   api_key_env: MOONSHOT_API_KEY
+  #   base_url: https://api.moonshot.ai/v1
+  #   family: moonshot
+  # groq:
+  #   provider: openai
+  #   model: llama-3.3-70b-versatile
+  #   api_key_env: GROQ_API_KEY
+  #   base_url: https://api.groq.com/openai/v1
+  #   family: groq
 
 # Graders (rubric YES/NO + the EGDA auditor). For each target model the
 # first judge listed with a DIFFERENT family and a working token is used.
