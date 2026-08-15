@@ -20,8 +20,10 @@ def show_models():
         sp = models.spec(key)
         ok = models.has_token(key)
         mark = "OK  " if ok else "--  "
+        token_name = sp.get("api_key_env") or "(none - runs locally)"
+        local = " [local]" if models.is_local(key) else ""
         print(f"{mark}{key:<15} {sp['model']:<28} family={sp['family']:<10} "
-              f"token={sp['api_key_env']}{'' if ok else ' (missing)'}")
+              f"token={token_name}{local}{'' if ok else ' (missing)'}")
         if ok:
             ready.append(key)
     print("\n--- judges (independent grader per model) ---")

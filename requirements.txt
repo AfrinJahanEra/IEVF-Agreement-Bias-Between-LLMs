@@ -1,6 +1,8 @@
 openai>=1.40
 anthropic>=0.34
 google-genai>=1.0
+torch>=2.2
+transformers>=4.44
 datasets>=2.20
 pandas>=2.0
 numpy>=1.26
