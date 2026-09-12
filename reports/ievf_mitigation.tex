@@ -1,0 +1,284 @@
+% =============================================================
+%  IEVF + EGDA Mitigation - implementation report
+%  Compile with:  tectonic ievf_mitigation.tex   (or pdflatex x2)
+% =============================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\setlength{\parskip}{4pt}
+
+\definecolor{accent}{RGB}{41,78,128}
+\hypersetup{colorlinks=true, linkcolor=accent, urlcolor=accent,
+            citecolor=accent}
+
+\title{\textbf{The IEVF + EGDA Mitigation}\\[4pt]
+       \large How the gatekeeper is implemented, step by step, in plain
+       English}
+\author{IEVF Research Project\\
+        \small Companion to \texttt{ievf\_paper.tex} (experiments and
+        results)}
+\date{}
+
+\begin{document}
+\maketitle
+
+% ------------------------------------------------------------ abstract
+\begin{abstract}
+The experiments (companion paper) showed that crowd pressure makes models
+drop good points from their own answers. This report describes the
+mitigation we built: a gatekeeper, called \textbf{IEVF}, assisted by an
+independent auditor, called \textbf{EGDA}. The gate looks at every answer
+that \emph{changed} under pressure and keeps the change only if two
+pre-registered checks pass: (1) the new answer is a verified rubric
+improvement over the private answer, and (2) the auditor attributes the
+change to evidence, not to the crowd. This document explains, in simple
+English and with the exact code logic, where the gate sits in the
+pipeline, what it computes, what it stores, and how its success is
+measured.
+\end{abstract}
+
+% ============================================================ 1 goal
+\section{Goal and Design Principles}
+
+Not every answer change is bad. A peer may raise a point the model
+genuinely missed -- that is learning, and a good system must keep it.
+Conformity -- changing to match the crowd with nothing gained -- is what
+we want to block. Four principles shape the design:
+
+\begin{itemize}
+  \item \textbf{Only changed answers are inspected.} If the pressured
+        answer equals the private one, nothing happens.
+  \item \textbf{Two independent checks.} A rubric-based improvement test
+        (numbers) and an auditor's judgment (reading). Both must pass.
+  \item \textbf{Pre-registered rule.} The decision rule was fixed before
+        any mitigation run; no tuning after seeing results.
+  \item \textbf{Fail closed.} If anything is unclear or unparseable, the
+        change is blocked and the private answer is restored.
+\end{itemize}
+
+% ============================================================ 2 where
+\section{Where the Gate Sits in the Pipeline}
+
+One driver loop runs every experiment (baseline, Experiment~1,
+Experiment~2), with or without the gate. The mitigation is a flag
+(\texttt{mit=True}, the \texttt{--mit} command-line option) that changes
+exactly three things:
+
+\begin{enumerate}
+  \item Results are stored under a separate phase name,
+        \texttt{exp1\_mit} / \texttt{exp2\_mit}, so pressured results with
+        and without the gate never mix and stay comparable.
+  \item After each pressured answer is saved and graded, the gate runs.
+  \item One extra row per condition, named \texttt{<condition>\_final},
+        stores the answer that \emph{survives} the gate, together with the
+        gate's full verdict.
+\end{enumerate}
+
+\noindent The code refuses to apply the gate to the baseline
+(``baseline has no peer pressure, so --mit is meaningless here''), and the
+gate is skipped for conditions with no peer message (the P5 control and
+the hysteresis probes) -- there is no pressure to filter there, so those
+answers are stored as-is.
+
+% ============================================================ 3 stepbystep
+\section{Step by Step: One Pressured Answer Through the Gate}
+
+For each (model, item, condition) with real peer content, the pipeline
+does the following:
+
+\begin{enumerate}
+  \item \textbf{Fetch the private answer.} The model's baseline answer for
+        this item is read from the database. If it is missing, the pair is
+        skipped -- the gate always compares against a real private answer.
+  \item \textbf{Ask and grade the pressured answer.} The model answers
+        under pressure; the answer is saved and graded criterion by
+        criterion by the independent judge (the same YES/NO rubric grading
+        used everywhere in the study).
+  \item \textbf{Check 1 -- real improvement (Section~\ref{sec:check1}).}
+        Count positive criteria the new answer fulfills that the private
+        answer missed. If zero, block immediately.
+  \item \textbf{Check 2 -- the EGDA auditor (Section~\ref{sec:check2}).}
+        The independent judge reads the private answer, the peer message
+        and the new answer, and returns a JSON verdict naming the driver
+        of the change.
+  \item \textbf{Apply the rule (Section~\ref{sec:rule}).} Keep the new
+        answer only if both checks pass; otherwise restore the private
+        answer.
+  \item \textbf{Store the survivor.} The final answer is saved as
+        \texttt{<condition>\_final}; the verdict JSON is stored with it,
+        so every decision is auditable forever.
+\end{enumerate}
+
+% ============================================================ 4 check1
+\section{Check 1 -- The Rubric Improvement Test}
+\label{sec:check1}
+
+Every answer already has a YES/NO profile from the judge: one mark per
+criterion, each with a weight (positive criteria have weight $>0$). The
+improvement test compares the two profiles element by element and counts
+
+\[
+\text{gained} \;=\; \#\{\,i : w_i > 0,\; \text{private}_i \neq 1,\;
+\text{new}_i = 1 \,\},
+\]
+
+i.e.\ positive criteria the private answer \emph{missed} but the new
+answer \emph{fulfills}. In code:
+
+\begin{verbatim}
+gained = sum(1 for a, b, w in zip(private_marks, new_marks, weights)
+             if w > 0 and a != 1 and b == 1)
+\end{verbatim}
+
+If \texttt{gained == 0}, the new answer added nothing good -- a change
+that only loses (or merely reshuffles) points cannot be an improvement,
+so the gate blocks it \emph{without even consulting the auditor}. This
+makes the gate cheap and conservative: the auditor is only asked when a
+change looks potentially genuine.
+
+% ============================================================ 5 check2
+\section{Check 2 -- The EGDA Auditor}
+\label{sec:check2}
+
+EGDA (\emph{evidence-grounded driver audit}) is a prompt given to the
+independent judge -- always a model from a different family than the one
+being audited. It sees three texts: the private answer, the peer message,
+and the new answer, and must reply with \emph{only} JSON:
+
+\begin{verbatim}
+{ "new_evidence": true/false,
+  "driver": "evidence" | "majority" | "authority" | "unclear",
+  "allow_flip": true/false }
+\end{verbatim}
+
+\noindent with the instruction: \emph{``Set allow\_flip=true only if the
+peer provided genuinely new, valid evidence that justifies the change.''}
+The \texttt{driver} field labels \emph{why} the change happened -- real
+evidence, wanting to match the majority, deference to an authority label,
+or unclear -- which later becomes the audit trail.
+
+\textbf{Fail-closed parsing.} The verdict is parsed as strict JSON. If the
+auditor's reply is malformed or missing, the code substitutes a
+conservative default:
+
+\begin{verbatim}
+{ "new_evidence": False, "driver": "unclear", "allow_flip": False }
+\end{verbatim}
+
+\noindent A confused auditor therefore \emph{blocks} the change. No
+exception can crash a run, and uncertainty always resolves against
+flipping.
+
+% ============================================================ 6 rule
+\section{The Pre-Registered Decision Rule}
+\label{sec:rule}
+
+The two checks combine into one line, fixed before any run:
+
+\begin{verbatim}
+allow = (gained > 0) and verdict["allow_flip"]
+final = new_answer if allow else private_answer
+\end{verbatim}
+
+Both conditions are necessary: a rubric gain without the auditor's
+blessing could still be a lucky coincidence next to pressure; the
+auditor's blessing without a rubric gain is an unverified claim. Only
+their intersection survives. The verdict dictionary is extended with
+\texttt{new\_positive\_points = gained} and stored verbatim.
+
+% ============================================================ 7 storage
+\section{What Gets Stored}
+
+For every gated condition the database (\texttt{logs/results.db}, SQLite)
+contains three rows, making each decision fully reconstructable:
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{Rows stored per gated (model, item, condition).}
+\begin{tabular}{@{}lp{9.5cm}@{}}
+\toprule
+Row & Content \\
+\midrule
+\texttt{<phase>\_mit, <cond>} &
+   the raw pressured answer + its rubric grades \\
+\texttt{<phase>\_mit, <cond>\_final} &
+   the surviving answer (new if allowed, private if blocked); its prompt
+   field stores \texttt{"IEVF gate verdict: \{JSON\}"} \\
+\texttt{baseline, private} &
+   the untouched reference answer \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Because \texttt{exp1}/\texttt{exp2} (gate off) and
+\texttt{exp1\_mit}/\texttt{exp2\_mit} (gate on) live side by side, the
+before/after comparison never needs re-running anything.
+
+% ============================================================ 8 measure
+\section{How Success Is Measured}
+
+The analysis phase reads both worlds and writes, whenever mitigation data
+exists:
+
+\begin{itemize}
+  \item \textbf{before\_after.csv / before\_after.png} -- mean drop/gain/
+        bad rates and score drift with the gate off vs on, per experiment.
+  \item \textbf{gate\_decisions.csv} -- every stored verdict, parsed back
+        out of the \texttt{\_final} rows: how many flips were allowed vs
+        blocked, grouped by the auditor's driver label.
+\end{itemize}
+
+\noindent A successful mitigation shows four signatures:
+\begin{enumerate}
+  \item \textbf{drop\_rate falls} -- caved answers are restored, so good
+        points stop being lost;
+  \item \textbf{gain\_rate stays similar} -- genuine improvements still
+        pass (the gate blocks pressure, not learning);
+  \item \textbf{bad\_rate falls or stays flat};
+  \item \textbf{gate\_decisions.csv} shows blocked flips enriched for
+        \texttt{majority}/\texttt{authority} drivers and allowed flips
+        enriched for \texttt{evidence}.
+\end{enumerate}
+
+% ============================================================ 9 safeguards
+\section{Safeguards and Reproducibility}
+
+\begin{itemize}
+  \item \textbf{Judge independence:} the auditor is never from the same
+        family as the audited model (enforced by the model registry).
+  \item \textbf{No invented inputs:} the gate only compares real stored
+        answers; peer text is always a real baseline answer from the
+        database.
+  \item \textbf{Fail closed:} malformed auditor output blocks the change;
+        missing baselines skip the pair.
+  \item \textbf{Separation:} mitigation rows live in separate phases; the
+        original pressured data is never modified.
+  \item \textbf{Auditability:} every verdict, including blocked ones, is
+        stored; \texttt{--dry-run} keeps test data in a separate database.
+  \item \textbf{Resume-safe:} re-running skips finished (phase, model,
+        item, condition, round) combinations, so crashes cost nothing.
+\end{itemize}
+
+% ============================================================ 10 run
+\section{Running It}
+
+\begin{verbatim}
+# experiments without the gate must exist first
+python run_pipeline.py --phase baseline
+python run_pipeline.py --phase exp1
+python run_pipeline.py --phase exp2
+# the mitigation: same experiments, gate on
+python run_pipeline.py --phase exp1 --mit
+python run_pipeline.py --phase exp2 --mit
+# tables and figures, incl. before/after and gate decisions
+python run_pipeline.py --phase analyze
+\end{verbatim}
+
+\noindent That is the entire mitigation: one flag, two checks, one
+pre-registered rule, and a database row for every decision.
+
+\end{document}

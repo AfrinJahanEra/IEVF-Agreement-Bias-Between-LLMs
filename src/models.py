@@ -7,16 +7,26 @@ per company. A model or judge is just a spec:
 
 So swapping an LLM = editing config.yaml and putting its token in .env.
 
+One exception: provider=huggingface runs the model LOCALLY via transformers
+(weights download once from the Hub, then pure local inference) - it needs
+no api_key_env at all.
+
 Retries 3 times on failure, then returns None (the pipeline logs the gap and
 continues - one bad call must never kill a 10,000-call run).
 """
 import json
 import time
-import requests
-
 from .config import CFG, env
 
 _clients = {}
+
+# Local HF models are big: keep only the last MAX_LOCAL_MODELS resident
+# (a study model + its judge is exactly 2). Older ones are evicted and
+# their VRAM freed - this lets a 15 GB Colab GPU cycle through many models.
+# Raise it in config.yaml (local.max_resident) when fewer/smaller models
+# all fit at once - then the reload bars disappear entirely.
+_local_models = OrderedDict()
+MAX_LOCAL_MODELS = int(CFG.get("local", {}).get("max_resident", 2))
 
 DRY_RUN = False  # set by run_pipeline.py --dry-run: fake answers, no API calls
 
@@ -56,8 +66,13 @@ def token(key: str) -> str:
     return env(spec(key).get("api_key_env", ""))
 
 
+def is_local(key: str) -> bool:
+    """Local Hugging Face models need no token at all."""
+    return spec(key)["provider"] == "huggingface"
+
+
 def has_token(key: str) -> bool:
-    return bool(token(key))
+    return is_local(key) or bool(token(key))
 
 
 def study_models(only=None):
@@ -96,6 +111,8 @@ def judge_for(model_key: str) -> str:
 # transport: three API styles cover every provider
 # ----------------------------------------------------------------------
 def _client(sp: dict):
+    if sp["provider"] == "huggingface":
+        return _load_local(sp)  # has its own LRU cache + VRAM eviction
     cache_key = (sp["provider"], sp.get("base_url"), sp.get("api_key_env"))
     if cache_key in _clients:
         return _clients[cache_key]
@@ -116,12 +133,50 @@ def _client(sp: dict):
         c = InferenceClient(api_key=api_key)
     else:
         raise ValueError(
-            f"Unknown provider {provider!r}. Use openai | anthropic | google.")
+            f"Unknown provider {provider!r}. Use openai | anthropic | google"
+            " | huggingface (local).")
     _clients[cache_key] = c
     return c
 
 
+def _load_local(sp: dict):
+    """Load a Hugging Face model once, run it fully locally - no API.
+    Uses the GPU when one is available, otherwise float32 on CPU."""
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    name = sp["model"]
+    cache_key = sp["model"]
+    if cache_key in _local_models:
+        _local_models.move_to_end(cache_key)
+        return _local_models[cache_key]
+    # evict least-recently-used local models before loading a new one
+    while len(_local_models) >= MAX_LOCAL_MODELS:
+        old_key, _ = _local_models.popitem(last=False)
+        print(f"  [hf] evicting {old_key} to make room")
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    print(f"  [hf] loading {name} into memory (weights come from the "
+          f"local HF cache - downloaded at most once per runtime session)")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    tok = AutoTokenizer.from_pretrained(name)
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+    try:  # transformers >= 5.0 calls it dtype; older versions torch_dtype
+        net = AutoModelForCausalLM.from_pretrained(name, dtype=dtype)
+    except TypeError:
+        net = AutoModelForCausalLM.from_pretrained(name, torch_dtype=dtype)
+    # from_pretrained loads to CPU by default - move it to the GPU ourselves
+    net.to(device)
+    net.eval()
+    bundle = {"tokenizer": tok, "model": net, "device": device}
+    _local_models[cache_key] = bundle
+    return bundle
+
+
 def _call(sp: dict, prompt: str, temperature: float, max_tokens: int) -> str:
+    if sp["provider"] == "huggingface":
+        return _call_local(sp, prompt, temperature, max_tokens)
     client = _client(sp)
     if sp["provider"] == "anthropic":
         r = client.messages.create(
@@ -145,6 +200,34 @@ def _call(sp: dict, prompt: str, temperature: float, max_tokens: int) -> str:
         model=sp["model"], temperature=temperature, max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}])
     return r.choices[0].message.content
+
+
+def _call_local(sp: dict, prompt: str, temperature: float,
+                max_tokens: int) -> str:
+    """One local generation call. temperature=0 -> greedy (repeatable,
+    matching the API path)."""
+    import torch
+    b = _client(sp)  # cached local bundle
+    _local_models.move_to_end(sp["model"])
+    tok, net, device = b["tokenizer"], b["model"], b["device"]
+    inputs = tok.apply_chat_template(
+        [{"role": "user", "content": prompt}],
+        add_generation_prompt=True, return_tensors="pt",
+        return_dict=True).to(device)
+    # prompts can be long (peer blocks); the small models we use fit far
+    # more than this - truncate defensively rather than crash
+    if inputs["input_ids"].shape[1] > 4096:
+        inputs = {k: v[:, :4096] for k, v in inputs.items()}
+    gen = dict(max_new_tokens=max_tokens, pad_token_id=tok.pad_token_id,
+               # small models fall into repetition loops that burn through
+               # the whole token cap and stall the run - penalize repeats
+               repetition_penalty=1.1)
+    if temperature and temperature > 0:
+        gen.update(do_sample=True, temperature=temperature)
+    with torch.no_grad():
+        out = net.generate(**inputs, **gen)
+    return tok.decode(out[0][inputs["input_ids"].shape[1]:],
+                      skip_special_tokens=True)
 
 
 def ask(key: str, prompt: str, temperature=None, max_tokens=None,
