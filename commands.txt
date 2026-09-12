@@ -1,0 +1,16 @@
+To create virtual environemnt in python, run:
+=======================================
+.venv\Scripts\activate.bat
+=======================================
+
+To activate the virtual environemnt, run:
+=======================================
+.venv\Scripts\activate.bat
+=======================================
+
+To run only the top 5 items, run:
+=======================================
+python run_pipeline.py --phase baseline --models gemini --limit 5
+python run_pipeline.py --phase baseline --models deepseek --limit 5
+python run_pipeline.py --phase baseline --models groq --limit 5
+=======================================

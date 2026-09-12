@@ -4,7 +4,7 @@ Also computes the MoReBench-style 0-100 reasoning score for a response.
 from . import storage
 from .models import ask
 from .prompts import JUDGE_CRITERION
-
+import json
 
 def _parse_yesno(text):
     if text is None:
@@ -17,21 +17,64 @@ def _parse_yesno(text):
     return -1
 
 
-def grade_response(response_id, scenario, response_text, criteria,
-                   judge_key):
-    """Grade every criterion of one item for one saved response.
-    Skips criteria already graded (resume-safe)."""
-    for idx, crit in enumerate(criteria):
-        if storage.judgment_done(response_id, idx, judge_key):
-            continue
-        prompt = JUDGE_CRITERION.format(
-            scenario=scenario, criterion=crit["text"],
-            response=response_text)
-        met = _parse_yesno(ask(judge_key, prompt))
-        storage.save_judgment(response_id, idx, crit["text"],
-                              crit["weight"], crit["dimension"], met,
-                              judge_key)
+# def grade_response(response_id, scenario, response_text, criteria,
+#                    judge_key):
+#     """Grade every criterion of one item for one saved response.
+#     Skips criteria already graded (resume-safe)."""
+#     for idx, crit in enumerate(criteria):
+#         if storage.judgment_done(response_id, idx, judge_key):
+#             continue
+#         prompt = JUDGE_CRITERION.format(
+#             scenario=scenario, criterion=crit["text"],
+#             response=response_text)
+#         met = _parse_yesno(ask(judge_key, prompt))
+#         storage.save_judgment(response_id, idx, crit["text"],
+#                               crit["weight"], crit["dimension"], met,
+#                               judge_key)
 
+def grade_response(response_id, scenario, response_text, criteria, judge_key):
+    """Grade all criteria with ONE API call."""
+
+    # Skip if already graded (resume-safe)
+    if all(storage.judgment_done(response_id, i, judge_key)
+           for i in range(len(criteria))):
+        return
+
+    criteria_text = "\n".join(
+        f"{i}. {c['text']}" for i, c in enumerate(criteria)
+    )
+
+    prompt = JUDGE_CRITERION.format(
+        scenario=scenario,
+        response=response_text,
+        criteria=criteria_text,
+    )
+
+    raw = ask(judge_key, prompt)
+
+    if raw:
+        raw = raw.strip()
+
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1]
+            raw = raw.rsplit("```", 1)[0].strip()
+
+    try:
+        result = json.loads(raw) if raw else {}
+    except Exception:
+        result = {}
+
+    for i, crit in enumerate(criteria):
+        met = _parse_yesno(result.get(str(i), ""))
+        storage.save_judgment(
+            response_id,
+            i,
+            crit["text"],
+            crit["weight"],
+            crit["dimension"],
+            met,
+            judge_key,
+        )
 
 def scenario_score(mets, weights):
     """MoReBench-style score: 100 = all positive criteria met and no

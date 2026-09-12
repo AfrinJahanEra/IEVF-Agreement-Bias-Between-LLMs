@@ -16,8 +16,6 @@ continues - one bad call must never kill a 10,000-call run).
 """
 import json
 import time
-from collections import OrderedDict
-
 from .config import CFG, env
 
 _clients = {}
@@ -130,6 +128,9 @@ def _client(sp: dict):
     elif provider == "google":
         from google import genai
         c = genai.Client(api_key=api_key)
+    elif provider == "huggingface":
+        from huggingface_hub import InferenceClient
+        c = InferenceClient(api_key=api_key)
     else:
         raise ValueError(
             f"Unknown provider {provider!r}. Use openai | anthropic | google"
@@ -185,6 +186,16 @@ def _call(sp: dict, prompt: str, temperature: float, max_tokens: int) -> str:
     if sp["provider"] == "google":
         r = client.models.generate_content(model=sp["model"], contents=prompt)
         return r.text
+    if sp["provider"] == "huggingface":
+        r = client.chat.completions.create(
+            model=sp["model"],
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return r.choices[0].message.content
     r = client.chat.completions.create(
         model=sp["model"], temperature=temperature, max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}])
