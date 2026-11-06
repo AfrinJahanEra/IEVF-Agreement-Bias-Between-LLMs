@@ -1,0 +1,33 @@
+%% IEVF pilot study — peer-pressure bias pipeline
+%% Renders in any Mermaid-compatible viewer (GitHub, Notion, Mermaid Live Editor, etc.)
+flowchart LR
+    Q["Peer-pressure dilemma:<br/>which patient gets the last ICU bed?"] --> BASE["Baseline<br/>private, unpressured answer"]
+    BASE --> EXP1["Experiment 1<br/>single peer"]
+    BASE --> EXP2["Experiment 2<br/>crowd pressure"]
+
+    EXP1 --> F["6 framings: P1 · P2 · P3 · P4 · P5* · P6"]
+    F --> NOBIAS["NO BIAS DETECTED<br/>every cell &le; 54% control"]
+
+    EXP2 --> K2["k = 2 peers &mdash; 62% drop"]
+    EXP2 --> K3["k = 3 peers &mdash; 42% drop"]
+    EXP2 --> K4["k = 4 peers &mdash; 67% drop"]
+    K2 --> R2["No lasting effect<br/>reverts after the probe"]
+    K3 --> R3["No effect<br/>dips below the control"]
+    K4 --> BIAS["BIAS DETECTED<br/>53% stay flipped"]
+
+    classDef neutral fill:#f8fafc,stroke:#0f172a,stroke-width:1.5px,color:#0f172a;
+    classDef exp1 fill:#eef2ff,stroke:#4338ca,stroke-width:2px,color:#312e81;
+    classDef exp2 fill:#fff1f2,stroke:#be123c,stroke-width:2px,color:#881337;
+    classDef control fill:#fffbeb,stroke:#b45309,stroke-width:2px,color:#78350f;
+    classDef bias fill:#fecdd3,stroke:#be123c,stroke-width:3px,color:#881337,font-weight:bold;
+    classDef result fill:#ffffff,stroke:#0f172a,stroke-width:1.5px,color:#0f172a;
+
+    class Q,BASE neutral
+    class EXP1 exp1
+    class EXP2 exp2
+    class F,K2,K3 neutral
+    class K4 control
+    class NOBIAS,R2,R3 result
+    class BIAS bias
+
+%% * P5 is the no-peer control condition (noise floor: 54% drop rate)
