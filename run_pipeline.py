@@ -16,6 +16,7 @@
   python run_pipeline.py --phase analyze
   python run_pipeline.py --phase exp1 --mit
   python run_pipeline.py --phase exp2 --mit
+  python run_pipeline.py --phase sycon      # label stances for ToF / NoF
   python run_pipeline.py --phase analyze
 
 Which LLMs run is decided by the tokens in .env: a model configured in
@@ -23,13 +24,13 @@ config.yaml without its token is skipped automatically.
 """
 import argparse
 
-from src import analyze, data_loader, models, pipeline, storage
+from src import analyze, data_loader, models, pipeline, storage, sycon
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", required=True,
-                    choices=["fetch-data", "baseline", "exp1", "exp2",
+                    choices=["fetch-data", "baseline", "exp1", "exp2", "sycon",
                              "analyze"])
     ap.add_argument("--models", default=None,
                     help="comma list, e.g. qwen,deepseek "
@@ -69,6 +70,11 @@ def main():
     if args.phase == "analyze":
         storage.init_db()
         analyze.run_analysis()
+        return
+
+    if args.phase == "sycon":  # label exp2 rounds -> feeds ToF / NoF
+        only = args.models.split(",") if args.models else None
+        sycon.label_stances(models.study_models(only), limit=args.limit)
         return
 
     items = data_loader.load_items()
