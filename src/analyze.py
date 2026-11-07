@@ -15,6 +15,7 @@ import pandas as pd
 
 from . import storage
 from .config import path
+from . import sycon
 from .judge import scenario_score
 
 
@@ -166,6 +167,9 @@ def run_analysis():
         (hy.groupby("k").agg(stuck_rate=("stuck", "mean"),
                              mean_drift=("score_drift", "mean"))
          .reset_index().to_csv(out_dir / "hysteresis.csv", index=False))
+
+    # Tables: ToF / NoF (SYCON-Bench metrics) under group pressure
+    sycon.write_tables(out_dir, fig_dir)
 
     # Table: what the IEVF gate blocked or allowed, by driver
     gd = gate_decisions()
