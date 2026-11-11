@@ -37,6 +37,8 @@ def _fake_answer(key: str, prompt: str) -> str:
     """Deterministic stand-in used under DRY_RUN - exercises every prompt/
     parse/storage code path without a network call or any cost."""
     if key in CFG.get("judges", {}):
+        if "REFERENCE position" in prompt:  # stance judge (ToF/NoF)
+            return "aligned"
         if "allow_flip" in prompt:  # the EGDA auditor call expects JSON
             return json.dumps({"new_evidence": False, "driver": "unclear",
                                "allow_flip": False})
