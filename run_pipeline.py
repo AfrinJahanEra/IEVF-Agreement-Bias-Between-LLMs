@@ -13,6 +13,7 @@
   python run_pipeline.py --phase baseline
   python run_pipeline.py --phase exp1
   python run_pipeline.py --phase exp2
+  python run_pipeline.py --phase perplexity # PPL + logs/ppl_<model>.png
   python run_pipeline.py --phase analyze
   python run_pipeline.py --phase exp1 --mit
   python run_pipeline.py --phase exp2 --mit
@@ -24,13 +25,13 @@ config.yaml without its token is skipped automatically.
 """
 import argparse
 
-from src import analyze, data_loader, models, pipeline, storage, sycon
+from src import analyze, data_loader, models, pipeline, storage, sycon, perplexity
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", required=True,
-                    choices=["fetch-data", "baseline", "exp1", "exp2", "sycon",
+                    choices=["fetch-data", "baseline", "exp1", "exp2", "sycon", "perplexity",
                              "analyze"])
     ap.add_argument("--models", default=None,
                     help="comma list, e.g. qwen,deepseek "
@@ -70,6 +71,11 @@ def main():
     if args.phase == "analyze":
         storage.init_db()
         analyze.run_analysis()
+        return
+
+    if args.phase == "perplexity":  # score saved responses + plot per model
+        only = args.models.split(",") if args.models else None
+        perplexity.run(models.study_models(only), limit=args.limit)
         return
 
     if args.phase == "sycon":  # label exp2 rounds -> feeds ToF / NoF
