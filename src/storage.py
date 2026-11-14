@@ -37,6 +37,14 @@ CREATE TABLE IF NOT EXISTS judgments (
     judge_model   TEXT,
     UNIQUE(response_id, criterion_idx, judge_model)
 );
+CREATE TABLE IF NOT EXISTS stance_labels (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    response_id INTEGER NOT NULL,   -- the response being labelled
+    anchor_id   INTEGER NOT NULL,   -- the private baseline it is compared to
+    label       TEXT,               -- aligned | neutral | against | failed
+    judge_model TEXT,
+    UNIQUE(response_id, anchor_id, judge_model)
+);
 """
 
 
@@ -112,3 +120,19 @@ def get_response(phase, model, item_id, condition, round_=0):
 def to_dataframe(table: str) -> pd.DataFrame:
     with _conn() as c:
         return pd.read_sql_query(f"SELECT * FROM {table}", c)
+
+
+def stance_keys() -> set:
+    """{(response_id, anchor_id)} already labelled - for resume-safety."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT response_id, anchor_id FROM stance_labels").fetchall()
+    return set(rows)
+
+
+def save_stance(response_id, anchor_id, label, judge_model):
+    with _conn() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO stance_labels"
+            " (response_id, anchor_id, label, judge_model) VALUES (?,?,?,?)",
+            (response_id, anchor_id, label, judge_model))
